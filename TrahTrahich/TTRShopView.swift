@@ -34,7 +34,7 @@ struct TTRShopView: View {
 
                                 boostRow(
                                     title: "Hydrant Flush",
-                                    detail: "Pops a blue hydrant onto the road and blasts traffic away.",
+                                    detail: "Pops a red hydrant onto the road and blasts traffic away.",
                                     icon: .hydrant,
                                     count: hydrantCharges,
                                     price: TTRShopCatalog.hydrantPrice,

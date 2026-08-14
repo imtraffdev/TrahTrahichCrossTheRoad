@@ -13,6 +13,7 @@ struct TTRGameView: View {
     @State private var currentScore = 0
     @State private var showPause = false
     @State private var showGameOver = false
+    @State private var miniGameRequest: TTRMiniGameRequest?
     @State private var audioPlayer: AVAudioPlayer?
 
     var body: some View {
@@ -29,6 +30,13 @@ struct TTRGameView: View {
                     .blur(radius: showPause || showGameOver ? 3 : 0)
 
                 gameHud(safeArea: geo.safeAreaInsets)
+
+                if let miniGameRequest {
+                    TTRMiniGameOverlay(request: miniGameRequest) { success in
+                        finishMiniGame(miniGameRequest, success: success)
+                    }
+                    .transition(.scale.combined(with: .opacity))
+                }
 
                 if showPause {
                     TTRModalPanel(title: "Paused", primaryTitle: "Resume", primaryIcon: "play.fill", primaryColor: TTRTheme.green) {
@@ -144,15 +152,30 @@ struct TTRGameView: View {
             }
         }
         scene.onRoadCrash = { score in
-            DispatchQueue.main.async {
-                currentScore = score
-                showGameOver = true
-                if soundEnabled {
-                    playSound(named: "ttrCrashSoft")
+                    DispatchQueue.main.async {
+                        currentScore = score
+                        showGameOver = true
+                        miniGameRequest = nil
+                        if soundEnabled {
+                            playSound(named: "ttrCrashSoft")
+                        }
+                    }
                 }
+        scene.onMiniGameRequested = { kind in
+            DispatchQueue.main.async {
+                guard miniGameRequest == nil, !showPause, !showGameOver else { return }
+                miniGameRequest = TTRMiniGameRequest(kind: kind)
             }
         }
         scene.configureScene(size: size)
+    }
+
+    private func finishMiniGame(_ request: TTRMiniGameRequest, success: Bool) {
+        scene.completeMiniGame(request.kind, success: success)
+        miniGameRequest = nil
+        if success {
+            TTRDailyMissionCenter.addProgress(.miniGames, amount: 1)
+        }
     }
 
     private func playSound(named name: String) {

@@ -9,19 +9,21 @@ struct TTRGuideView: View {
                 VStack(spacing: 14) {
                     TTRCapsuleTitle(text: "How To Play")
                     TTRPanel {
-                        VStack(alignment: .leading, spacing: 14) {
-                            rule("Press GO to dash one lane forward.")
-                            rule("Use the up and down arrows to change lanes.")
-                            rule("Read the vertical traffic before moving.")
-                            rule("Line up with glowing road coins to collect them.")
-                            rule("Shop boosts can block traffic or flush cars away.")
-                            rule("Road styles change the whole run after activation.")
-                            rule("Blue manholes add road detail; only cars are dangerous.")
-                            rule("Daily Goals refresh locally and reward extra coins.")
-                            rule("Cross the full road to earn a clean bonus.")
-                            rule("Every run updates your local best distance.")
+                        ScrollView(showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                rule("Press GO to dash one lane forward.")
+                                rule("Use the up and down arrows to line up with safe gaps and coins.")
+                                rule("After clean crossings, mini-games can open as bonus street events.")
+                                rule("Signal Hack asks you to repeat three lights, then freezes traffic.")
+                                rule("Pressure Burst asks you to stop the needle in green, then flushes cars away.")
+                                rule("Drain Shortcut asks you to match a glowing exit, then jumps ahead.")
+                                rule("Barrier Kit blocks cars above and below Trah for two impacts.")
+                                rule("Hydrant Flush drops a red hydrant and sprays nearby traffic away.")
+                                rule("Daily Goals and road styles add extra coin targets between runs.")
+                                rule("Every run updates your local best distance.")
+                            }
                         }
-                        .frame(width: min(geo.size.width * (geo.size.height > geo.size.width ? 0.78 : 0.45), 390), alignment: .leading)
+                        .frame(width: min(geo.size.width * (geo.size.height > geo.size.width ? 0.82 : 0.52), 460), height: min(geo.size.height * 0.62, 420), alignment: .leading)
                     }
                 }
             }

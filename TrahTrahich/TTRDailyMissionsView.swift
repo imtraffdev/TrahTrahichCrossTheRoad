@@ -4,6 +4,7 @@ enum TTRMissionKind: String {
     case steps
     case coins
     case crossings
+    case miniGames
 }
 
 struct TTRDailyMission: Identifiable {
@@ -36,6 +37,7 @@ enum TTRDailyMissionCenter {
         let stepGoal = 18 + seed % 10
         let coinGoal = 6 + seed % 5
         let crossingGoal = 2 + seed % 3
+        let miniGameGoal = 2 + seed % 2
 
         return [
             TTRDailyMission(
@@ -70,6 +72,17 @@ enum TTRDailyMissionCenter {
                 reward: 34 + seed % 12,
                 progress: progress(for: .crossings),
                 claimed: claimed(for: .crossings)
+            ),
+            TTRDailyMission(
+                id: TTRMissionKind.miniGames.rawValue,
+                kind: .miniGames,
+                title: "Street Events",
+                subtitle: "Win signal, pressure, or drain mini-games.",
+                icon: "sparkles",
+                goal: miniGameGoal,
+                reward: 38 + seed % 12,
+                progress: progress(for: .miniGames),
+                claimed: claimed(for: .miniGames)
             )
         ]
     }
@@ -89,7 +102,7 @@ enum TTRDailyMissionCenter {
     }
 
     static func resetAllProgress() {
-        for kind in [TTRMissionKind.steps, .coins, .crossings] {
+        for kind in [TTRMissionKind.steps, .coins, .crossings, .miniGames] {
             defaults.removeObject(forKey: progressKey(for: kind))
             defaults.removeObject(forKey: claimedKey(for: kind))
         }
@@ -99,7 +112,7 @@ enum TTRDailyMissionCenter {
     private static func ensureToday() {
         let today = todayKey()
         guard defaults.string(forKey: dateKey) != today else { return }
-        for kind in [TTRMissionKind.steps, .coins, .crossings] {
+        for kind in [TTRMissionKind.steps, .coins, .crossings, .miniGames] {
             defaults.removeObject(forKey: progressKey(for: kind))
             defaults.removeObject(forKey: claimedKey(for: kind))
         }
