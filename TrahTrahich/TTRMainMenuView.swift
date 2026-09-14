@@ -2,188 +2,123 @@ import SpriteKit
 import SwiftUI
 
 struct TTRMainMenuView: View {
+    @State private var selectedID = TTRCityStore.nextDistrict.id
+    private var selected: TTRDistrict { TTRDistrict.all.first { $0.id == selectedID } ?? .all[0] }
+
     var body: some View {
         GeometryReader { geo in
-            let isLandscape = geo.size.width > geo.size.height
-
-            ZStack {
-                VStack {
-                    HStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    HStack(alignment: .center) {
+                        Image(.ttrLogo).resizable().scaledToFit().frame(width: min(geo.size.width * 0.40, 190))
                         Spacer()
-                        TTRCoinsPill()
+                        VStack(alignment: .trailing, spacing: 8) {
+                            TTRCoinsPill()
+                            Text("\(TTRDistrict.all.filter { TTRCityStore.stars(for: $0.id) > 0 }.count) / 6 DISTRICTS ONLINE")
+                                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(TTRTheme.cyan)
+                        }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, isLandscape ? 20 : 14)
-                    Spacer()
+                    HStack(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("STREET RESCUE").font(.system(size: 11, weight: .heavy, design: .monospaced)).foregroundStyle(TTRTheme.cyan)
+                            Text("Bring the city\nback online.").font(.system(size: 32, weight: .black, design: .rounded)).foregroundStyle(.white)
+                            Text("Choose a device. Change the traffic. Reconnect every hub.")
+                                .font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                        }
+                        Spacer(minLength: 0)
+                        TTRRiggedHeroPreview(width: 94, height: 132)
+                    }
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack {
+                            Image(systemName: TTRCityStore.trainingComplete ? "location.fill" : "graduationcap.fill").foregroundStyle(TTRTheme.yellow)
+                            Text(TTRCityStore.trainingComplete ? "NEXT DISPATCH · \(selected.name.uppercased())" : "FIRST DISPATCH · TRAINING YARD")
+                                .font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundStyle(.white)
+                        }
+                        Text(TTRCityStore.trainingComplete ? selected.detail : "A guided route with real controls, three devices and practice shields. Learn at your own pace.")
+                            .font(.system(size: 14)).foregroundStyle(.white.opacity(0.75))
+                        Button {
+                            TTRNavigation.shared.start(selected)
+                        } label: {
+                            HStack {
+                                Text(TTRCityStore.trainingComplete ? "RESTORE DISTRICT" : "START TRAINING")
+                                Spacer()
+                                Image(systemName: "arrow.right")
+                            }
+                            .font(.system(size: 17, weight: .black, design: .rounded))
+                            .foregroundStyle(TTRTheme.ink).padding(18)
+                            .background(TTRTheme.cyan, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("city.start")
+                    }
+                    .padding(18).background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20))
+                    HStack {
+                        Text("CITY NETWORK").font(.system(size: 12, weight: .heavy, design: .monospaced)).foregroundStyle(.white.opacity(0.65))
+                        Spacer()
+                        Text("\(TTRDistrict.all.reduce(0) { $0 + TTRCityStore.stars(for: $1.id) }) / 18 ★")
+                            .font(.system(size: 12, weight: .heavy)).foregroundStyle(TTRTheme.yellow)
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), spacing: 12)], spacing: 12) {
+                        ForEach(TTRDistrict.all) { district in districtCard(district) }
+                    }
+                    Text("Earn a medal for restoring a district, one for every repair on the first try, and one for its road-coin target.")
+                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.58))
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 95), spacing: 10)], spacing: 10) {
+                        link("Records", "chart.bar.xaxis", .leaders)
+                        link("Gear", "shippingbox.fill", .shop)
+                        link("Daily goals", "checklist", .missions)
+                        link("Field guide", "book.fill", .guide)
+                        link("Settings", "slider.horizontal.3", .settings)
+                    }
                 }
-                .zIndex(30)
-
-                if isLandscape {
-                    HStack(spacing: 26) {
-                        heroColumn(width: min(geo.size.width * 0.33, 430), compact: false)
-                        commandDeck(width: min(geo.size.width * 0.45, 560), isLandscape: true)
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.trailing, 92)
-                    .zIndex(10)
-                } else {
-                    VStack(spacing: 12) {
-                        heroColumn(width: min(geo.size.width * 0.68, 310), compact: true)
-                            .padding(.top, 70)
-                        commandDeck(width: min(geo.size.width * 0.86, 360), isLandscape: false)
-                    }
-                    .padding(.horizontal, 18)
-                    .zIndex(10)
-                }
+                .padding(22).frame(maxWidth: 760).frame(maxWidth: .infinity)
             }
         }
         .ttrBackdrop()
     }
 
-    private func heroColumn(width: CGFloat, compact: Bool) -> some View {
-        VStack(spacing: 4) {
-            Image(.ttrLogo)
-                .resizable()
-                .scaledToFit()
-                .frame(width: width)
-                .shadow(color: .black.opacity(0.45), radius: 8, x: 0, y: 6)
-
-            TTRRiggedHeroPreview(width: width * (compact ? 0.50 : 0.58), height: width * (compact ? 0.48 : 0.64))
-                .frame(maxHeight: width * (compact ? 0.48 : 0.64))
-                .shadow(color: .black.opacity(0.32), radius: 9, x: 0, y: 8)
-
-            if !compact {
-                HStack(spacing: 8) {
-                    ForEach(TTRMiniGameKind.allCases, id: \.self) { kind in
-                        Image(kind.imageName)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 44, height: 44)
-                            .padding(6)
-                            .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(TTRTheme.cyan.opacity(0.34), lineWidth: 1.5))
-                    }
-                }
-                .padding(.top, 2)
-            }
-        }
-    }
-
-    private func commandDeck(width: CGFloat, isLandscape: Bool) -> some View {
-        TTRPanel {
-            VStack(spacing: isLandscape ? 13 : 10) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("STREET CONTROL")
-                            .font(.system(size: 13, weight: .black, design: .rounded))
-                            .foregroundStyle(TTRTheme.yellow)
-                            .lineLimit(1)
-                        Text("Cross lanes, trigger mini-games, spend boosts.")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.72))
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.78)
-                    }
-                    Spacer(minLength: 0)
-                }
-
-                Button {
-                    TTRNavigation.shared.currentScreen = .game
-                } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 24, weight: .black))
-                            .foregroundStyle(TTRTheme.green)
-                            .frame(width: 48, height: 48)
-                            .background(.white, in: Circle())
-                        Text("START RUN")
-                            .font(.system(size: 28, weight: .black, design: .rounded))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.70)
-                            .shadow(color: .black.opacity(0.74), radius: 0, x: 1.7, y: 1.7)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 16)
-                    .frame(height: isLandscape ? 72 : 64)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(TTRTheme.green)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.86), lineWidth: 2.5))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(.white.opacity(0.18))
-                                    .frame(height: 24),
-                                alignment: .top
-                            )
-                            .shadow(color: .black.opacity(0.36), radius: 6, x: 0, y: 5)
-                    )
-                }
-                .buttonStyle(.plain)
-
-                HStack(spacing: 9) {
-                    ForEach(TTRMiniGameKind.allCases, id: \.self) { kind in
-                        featureCard(kind)
-                    }
-                }
-
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 9), count: isLandscape ? 5 : 3), spacing: 9) {
-                    quickButton("Goals", "checklist.checked", Color(red: 0.00, green: 0.65, blue: 0.78), .missions)
-                    quickButton("Shop", "cart.fill", Color(red: 0.08, green: 0.54, blue: 0.96), .shop)
-                    quickButton("Rules", "questionmark.circle.fill", Color(red: 0.03, green: 0.47, blue: 0.92), .guide)
-                    quickButton("Leaders", "trophy.fill", Color(red: 0.49, green: 0.30, blue: 0.78), .leaders)
-                    quickButton("Tuning", "slider.horizontal.3", Color(red: 0.95, green: 0.55, blue: 0.06), .settings)
-                }
-            }
-            .frame(width: width)
-        }
-    }
-
-    private func featureCard(_ kind: TTRMiniGameKind) -> some View {
-        VStack(spacing: 5) {
-            Image(kind.imageName)
-                .resizable()
-                .scaledToFit()
-                .frame(height: 46)
-            Text(kind.title.uppercased())
-                .font(.system(size: 10, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.62)
-            Text(kind.rewardText)
-                .font(.system(size: 9, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.66))
-                .lineLimit(1)
-                .minimumScaleFactor(0.60)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 92)
-        .padding(.horizontal, 6)
-        .background(Color(red: 0.01, green: 0.16, blue: 0.42).opacity(0.82), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(TTRTheme.cyan.opacity(0.42), lineWidth: 1.5))
-    }
-
-    private func quickButton(_ title: String, _ systemImage: String, _ color: Color, _ screen: TTRScreen) -> some View {
-        Button {
-            TTRNavigation.shared.currentScreen = screen
+    private func districtCard(_ district: TTRDistrict) -> some View {
+        let unlocked = TTRCityStore.isUnlocked(district.id)
+        let stars = TTRCityStore.stars(for: district.id)
+        let selected = selectedID == district.id
+        return Button {
+            selectedID = district.id
+            TTRNavigation.shared.start(district)
         } label: {
-            VStack(spacing: 5) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 17, weight: .black))
-                    .foregroundStyle(.white)
-                Text(title.uppercased())
-                    .font(.system(size: 10, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(String(format: "%02d", district.id)).font(.system(size: 27, weight: .black, design: .rounded))
+                    Spacer()
+                    Image(systemName: unlocked ? (stars > 0 ? "checkmark.circle.fill" : "bolt.circle") : "lock.fill")
+                }.foregroundStyle(unlocked ? TTRTheme.cyan : .white.opacity(0.4))
+                Text(district.name).font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundStyle(.white)
+                Text(unlocked ? "\(district.blocks.count) hubs · \(district.coinTarget) road coins" : "Complete district \(district.id - 1)")
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+                HStack(spacing: 4) {
+                    ForEach(0..<3) { index in
+                        Image(systemName: index < stars ? "star.fill" : "star").foregroundStyle(index < stars ? TTRTheme.yellow : .white.opacity(0.25))
+                    }
+                    Spacer()
+                    if selected { Text("NEXT").font(.system(size: 9, weight: .heavy)).foregroundStyle(TTRTheme.cyan) }
+                }.font(.system(size: 11))
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .background(color, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.58), lineWidth: 1.5))
-            .shadow(color: .black.opacity(0.22), radius: 3, x: 0, y: 3)
+            .padding(15).frame(maxWidth: .infinity, alignment: .leading)
+            .background(selected ? TTRTheme.cyan.opacity(0.12) : .white.opacity(0.04), in: RoundedRectangle(cornerRadius: 17))
+            .overlay(RoundedRectangle(cornerRadius: 17).stroke(selected ? TTRTheme.cyan : .white.opacity(0.12), lineWidth: 1.5))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain).disabled(!unlocked)
+        .accessibilityLabel("\(district.name), \(unlocked ? "available" : "locked"), \(stars) medals")
+    }
+
+    private func link(_ title: String, _ icon: String, _ screen: TTRScreen) -> some View {
+        Button { TTRNavigation.shared.currentScreen = screen } label: {
+            VStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 19))
+                Text(title).font(.system(size: 11, weight: .bold))
+            }.foregroundStyle(.white.opacity(0.85)).frame(maxWidth: .infinity).padding(.vertical, 14)
+                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 13))
+        }.buttonStyle(.plain)
     }
 }
 
@@ -191,18 +126,11 @@ struct TTRRiggedHeroPreview: View {
     let width: CGFloat
     let height: CGFloat
     @State private var scene = TTRHeroPreviewScene()
-
     var body: some View {
         SpriteView(scene: scene, options: [.allowsTransparency, .ignoresSiblingOrder])
             .frame(width: width, height: height)
-            .onAppear {
-                scene.configure(size: CGSize(width: width, height: height))
-            }
-            .onChange(of: width) { newWidth in
-                scene.configure(size: CGSize(width: newWidth, height: height))
-            }
-            .onChange(of: height) { newHeight in
-                scene.configure(size: CGSize(width: width, height: newHeight))
-            }
+            .onAppear { scene.configure(size: CGSize(width: width, height: height)) }
+            .onChange(of: width) { value in scene.configure(size: CGSize(width: value, height: height)) }
+            .onChange(of: height) { value in scene.configure(size: CGSize(width: width, height: value)) }
     }
 }

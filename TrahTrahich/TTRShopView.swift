@@ -103,7 +103,7 @@ struct TTRShopView: View {
         let active = activeTheme == theme.rawValue
         return shopRow(
             title: theme.title,
-            detail: active ? "Active road and grass palette" : (unlocked ? "Unlocked, tap to activate" : "New procedural road and grass palette"),
+            detail: active ? "Active sidewalk and grass palette" : (unlocked ? "Unlocked, tap to activate" : "New sidewalk and grass palette"),
             icon: .symbol(theme.icon),
             color: theme.accent,
             buttonTitle: active ? "ON" : (unlocked ? "USE" : "\(theme.price)"),

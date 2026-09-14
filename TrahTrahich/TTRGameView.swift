@@ -3,337 +3,343 @@ import SpriteKit
 import SwiftUI
 
 struct TTRGameView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("ttrCoins") private var coins = 0
     @AppStorage("ttrBestScore") private var bestScore = 0
     @AppStorage("ttrSoundEnabled") private var soundEnabled = true
     @AppStorage("ttrBarrierCharges") private var barrierCharges = 0
     @AppStorage("ttrHydrantCharges") private var hydrantCharges = 0
-
     @State private var scene = TTRCrossRoadScene()
-    @State private var currentScore = 0
+    @State private var hud = TTRRouteHUDState()
+    @State private var showIntro = true
     @State private var showPause = false
     @State private var showGameOver = false
     @State private var miniGameRequest: TTRMiniGameRequest?
+    @State private var interruptedDevice: TTRMiniGameKind?
+    @State private var result: TTRRouteProgress?
+    @State private var completionReward = 0
+    @State private var routeSeconds = 0
+    @State private var configured = false
     @State private var audioPlayer: AVAudioPlayer?
+    private let district = TTRNavigation.shared.district
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 SpriteView(scene: scene, options: [.ignoresSiblingOrder])
+                    .accessibilityHidden(true)
                     .ignoresSafeArea()
-                    .onAppear {
-                        wireScene(size: sceneSize(for: geo))
+                    .onAppear { wireScene(size: sceneSize(for: geo)) }
+                    .onChange(of: geo.size) { _ in wireScene(size: sceneSize(for: geo)) }
+                gameHUD(compact: geo.size.width > geo.size.height)
+                if let request = miniGameRequest {
+                    TTRMiniGameOverlay(request: request) { success in
+                        guard miniGameRequest?.id == request.id else { return }
+                        scene.completeMiniGame(request.kind, success: success)
+                        miniGameRequest = nil
+                        if success && !district.isTraining { TTRDailyMissionCenter.addProgress(.miniGames) }
                     }
-                    .onChange(of: geo.size) { newSize in
-                        wireScene(size: sceneSize(for: geo))
-                    }
-                    .blur(radius: showPause || showGameOver ? 3 : 0)
-
-                gameHud(safeArea: geo.safeAreaInsets)
-
-                if let miniGameRequest {
-                    TTRMiniGameOverlay(request: miniGameRequest) { success in
-                        finishMiniGame(miniGameRequest, success: success)
-                    }
-                    .transition(.scale.combined(with: .opacity))
                 }
-
+                if showIntro { introSheet }
                 if showPause {
-                    TTRModalPanel(title: "Paused", primaryTitle: "Resume", primaryIcon: "play.fill", primaryColor: TTRTheme.green) {
-                        showPause = false
-                        scene.resumeRoad()
-                    } secondary: {
-                        TTRNavigation.shared.currentScreen = .menu
+                    sheet(title: "Route paused", subtitle: "Your hub progress is kept while you stay on this route.") {
+                        action("RESUME ROUTE", icon: "play.fill") {
+                            showPause = false
+                            scene.resumeRoad()
+                            if let kind = interruptedDevice {
+                                miniGameRequest = TTRMiniGameRequest(kind: kind, isTraining: district.isTraining)
+                                interruptedDevice = nil
+                            }
+                        }
+                        action("RETURN TO CITY", icon: "map", secondary: true) { leave() }
                     }
                 }
-
                 if showGameOver {
-                    TTRModalPanel(title: "Crash!", primaryTitle: "Retry", primaryIcon: "arrow.clockwise", primaryColor: Color(red: 0.94, green: 0.20, blue: 0.14)) {
-                        showGameOver = false
-                        currentScore = 0
-                        scene.restartRoad()
-                    } secondary: {
-                        TTRNavigation.shared.currentScreen = .menu
+                    sheet(title: "Traffic got through", subtitle: "\(hud.repaired) of \(hud.total) hubs restored. Try another device or wait for a wider gap.") {
+                        action("RETRY DISTRICT", icon: "arrow.clockwise") {
+                            showGameOver = false
+                            scene.restartRoad()
+                        }
+                        action("RETURN TO CITY", icon: "map", secondary: true) { leave() }
                     }
                 }
+                if let result { resultSheet(result) }
             }
+        }
+        .onChange(of: scenePhase) { phase in
+            guard phase != .active, !showIntro, !showGameOver, result == nil else { return }
+            if let request = miniGameRequest {
+                interruptedDevice = request.kind
+                miniGameRequest = nil
+            }
+            showPause = true
+            scene.pauseRoad()
+        }
+        .onDisappear {
+            scene.pauseRoad()
+            scene.onRouteChanged = nil
+            scene.onRouteCompleted = nil
+            scene.onMiniGameRequested = nil
+            scene.onRoadCrash = nil
+            scene.onCoinEarned = nil
+            scene.onScoreChanged = nil
+            scene.onMoveCompleted = nil
+            scene.onRoadCoinCollected = nil
+            scene.onCrossingCompleted = nil
         }
     }
 
     private func sceneSize(for geo: GeometryProxy) -> CGSize {
-        CGSize(
-            width: geo.size.width + geo.safeAreaInsets.leading + geo.safeAreaInsets.trailing,
-            height: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
-        )
+        CGSize(width: geo.size.width + geo.safeAreaInsets.leading + geo.safeAreaInsets.trailing,
+               height: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom)
     }
 
-    private func gameHud(safeArea: EdgeInsets) -> some View {
-        VStack {
-            HStack {
-                Button {
-                    showPause = true
-                    scene.pauseRoad()
-                } label: {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 20, weight: .black))
-                        .foregroundStyle(TTRTheme.ink)
-                        .frame(width: 52, height: 52)
-                        .background(TTRTheme.yellow, in: Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.92), lineWidth: 2))
-                        .shadow(color: .black.opacity(0.28), radius: 5, x: 0, y: 4)
+    private func gameHUD(compact: Bool) -> some View {
+        VStack(spacing: 6) {
+            VStack(spacing: 8) {
+                HStack(spacing: 12) {
+                    Button {
+                        showPause = true
+                        scene.pauseRoad()
+                    } label: {
+                        Image(systemName: "pause.fill").font(.system(size: 15, weight: .black))
+                            .foregroundStyle(.white).frame(width: 44, height: 44)
+                            .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                    }.buttonStyle(.plain).accessibilityLabel("Pause route")
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(district.isTraining ? "PRACTICE SHIELDS ON" : "DISTRICT \(district.id) · RESTORE THE NETWORK")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(TTRTheme.cyan)
+                        Text(district.name).font(.system(size: compact ? 17 : 22, weight: .black, design: .rounded)).foregroundStyle(.white)
+                    }
+                    Spacer(minLength: 4)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("\(hud.repaired)/\(hud.total) ONLINE").font(.system(size: 12, weight: .heavy)).foregroundStyle(TTRTheme.green)
+                        if !district.isTraining {
+                            Label("\(hud.coins)/\(hud.target)", systemImage: "circle.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(TTRTheme.yellow)
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    TTRCoinsPill()
-                    Text("BEST \(bestScore)")
-                        .font(.system(size: 12, weight: .black, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.88))
-                        .shadow(color: .black.opacity(0.7), radius: 0, x: 1, y: 1)
+                HStack(spacing: 5) {
+                    ForEach(0..<district.blocks.count, id: \.self) { index in
+                        Capsule().fill(index < hud.repaired ? TTRTheme.green : .white.opacity(0.16)).frame(height: 5)
+                    }
+                    Image(systemName: "flag.checkered").font(.system(size: 12)).foregroundStyle(.white)
+                }
+                if !compact {
+                    HStack {
+                        Text(hud.effect.map { "\($0.rewardText.uppercased()) · \(hud.effectSeconds)s" } ?? (district.isTraining ? "LEARN BY DOING · 3 DEVICES" : "RESTORE EVERY HUB → REACH EXIT"))
+                            .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(hud.effect == nil ? .white.opacity(0.65) : TTRTheme.yellow)
+                        Spacer()
+                    }
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, max(12, safeArea.top + 8))
-
-            Spacer()
-
-            TTRGameControlBar(score: currentScore, barrierCharges: barrierCharges, hydrantCharges: hydrantCharges) {
-                guard barrierCharges > 0, scene.activateBarrierShield() else { return }
-                barrierCharges -= 1
-            } hydrantAction: {
-                guard hydrantCharges > 0, scene.activateHydrantFlush() else { return }
-                hydrantCharges -= 1
-            } upAction: {
-                scene.moveVertically(1)
-            } downAction: {
-                scene.moveVertically(-1)
-            } goAction: {
-                scene.stepForward()
+            .padding(compact ? 10 : 14)
+            .background(Color(red: 0.02, green: 0.08, blue: 0.17).opacity(0.96), in: RoundedRectangle(cornerRadius: 17))
+            Spacer(minLength: 0)
+            VStack(spacing: 8) {
+                HStack(alignment: .center, spacing: 10) {
+                    if let kind = hud.nearby {
+                        Image(kind.imageName).resizable().scaledToFit().frame(width: 42, height: 42)
+                    } else {
+                        Image(systemName: hud.canGo ? "arrow.right.circle.fill" : "arrow.up.arrow.down.circle.fill")
+                            .font(.system(size: 28)).foregroundStyle(TTRTheme.cyan)
+                    }
+                    Text(hud.message).font(.system(size: compact ? 12 : 13, weight: .semibold)).foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                    if compact, hud.effect != nil {
+                        Text("\(hud.effectSeconds)s").font(.system(size: 15, weight: .heavy)).foregroundStyle(TTRTheme.yellow)
+                    }
+                }
+                .padding(12).frame(maxWidth: .infinity)
+                .background(Color(red: 0.02, green: 0.11, blue: 0.23).opacity(0.97), in: RoundedRectangle(cornerRadius: 14))
+                HStack(spacing: 8) {
+                    if !district.isTraining {
+                        gearButton(.barrier, count: barrierCharges) {
+                            if barrierCharges > 0, scene.activateBarrierShield() { barrierCharges -= 1 }
+                        }
+                        gearButton(.hydrant, count: hydrantCharges) {
+                            if hydrantCharges > 0, scene.activateHydrantFlush() { hydrantCharges -= 1 }
+                        }
+                    }
+                    moveButton("arrow.up", label: "Move up", id: "route.up") { scene.moveVertically(1) }
+                    moveButton("arrow.down", label: "Move down", id: "route.down") { scene.moveVertically(-1) }
+                    Button {
+                        if hud.nearby != nil { scene.useNearbyDevice() }
+                        else { scene.stepForward() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(hud.nearby == nil ? "GO" : "USE")
+                            Image(systemName: hud.nearby == nil ? "arrow.right" : "bolt.fill")
+                        }
+                        .font(.system(size: 22, weight: .black, design: .rounded))
+                        .foregroundStyle(hud.nearby != nil || hud.canGo ? TTRTheme.ink : .white.opacity(0.4))
+                        .frame(maxWidth: .infinity).frame(height: 58)
+                        .background(hud.nearby != nil ? TTRTheme.yellow : (hud.canGo ? TTRTheme.cyan : Color.white.opacity(0.10)), in: RoundedRectangle(cornerRadius: 14))
+                    }.buttonStyle(.plain).accessibilityIdentifier("route.action")
+                }
             }
-            .padding(.horizontal, 14)
-            .padding(.bottom, max(12, safeArea.bottom + 8))
         }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .allowsHitTesting(!showIntro && !showPause && !showGameOver && miniGameRequest == nil && result == nil)
+        .accessibilityHidden(showIntro || showPause || showGameOver || miniGameRequest != nil || result != nil)
+    }
+
+    private func moveButton(_ icon: String, label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 22, weight: .heavy)).foregroundStyle(.white)
+                .frame(width: 46, height: 58).background(Color(red: 0.04, green: 0.28, blue: 0.52), in: RoundedRectangle(cornerRadius: 13))
+        }.buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
+    }
+    private func gearButton(_ kind: TTRBoostIconKind, count: Int, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                TTRBoostIconView(kind: kind, color: TTRTheme.cyan, size: 24)
+                Text("\(count)").font(.system(size: 11, weight: .heavy))
+            }.foregroundStyle(.white).frame(width: 36, height: 58)
+                .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        }.buttonStyle(.plain).disabled(count == 0).opacity(count == 0 ? 0.35 : 1)
+    }
+
+    private var introSheet: some View {
+        sheet(title: district.isTraining ? "Your first rescue" : district.name, subtitle: district.detail) {
+            VStack(alignment: .leading, spacing: 14) {
+                tip("arrow.up.arrow.down", "MOVE TO A DEVICE", "Arrows move along the safe hub. Approach a glowing device to reveal USE.")
+                tip("bolt.fill", "RESTORE THE HUB", "Solve its challenge. Your choice changes the road ahead.")
+                tip("arrow.right", "CROSS & RECONNECT", "GO moves right. Restore every hub and reach the marked exit.")
+            }
+            if district.isTraining {
+                Text("Practice shields prevent crashes. Challenges are slower. You can retry every device.")
+                    .font(.system(size: 12)).foregroundStyle(TTRTheme.cyan)
+            } else {
+                Text("MEDALS: finish · all repairs first try · collect \(district.coinTarget) road coins")
+                    .font(.system(size: 12, weight: .bold)).foregroundStyle(TTRTheme.yellow)
+            }
+            action(district.isTraining ? "LET’S PRACTICE" : "BEGIN RESCUE", icon: "arrow.right") {
+                showIntro = false
+                scene.resumeRoad()
+            }
+            action("RETURN TO CITY", icon: "map", secondary: true) { leave() }
+        }
+    }
+
+    private func resultSheet(_ progress: TTRRouteProgress) -> some View {
+        sheet(title: district.isTraining ? "Ready for the city" : "District online!", subtitle: district.isTraining ? "You used the signal, hydrant and drain. Now choose your own route through the city." : "\(district.name) reconnected. Every hub is back online.") {
+            if !district.isTraining {
+                HStack(spacing: 18) {
+                    ForEach(0..<3) { index in
+                        Image(systemName: index < progress.stars ? "star.fill" : "star")
+                            .font(.system(size: 35)).foregroundStyle(index < progress.stars ? TTRTheme.yellow : .white.opacity(0.2))
+                    }
+                }.frame(maxWidth: .infinity).padding(.vertical, 8)
+                Text("\(progress.firstTryRepairs)/\(district.blocks.count) first-try repairs · \(progress.roadCoins)/\(district.coinTarget) road coins\n\(routeSeconds)s active time · +\(completionReward) completion coins")
+                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white.opacity(0.8))
+                HStack(spacing: 10) {
+                    ForEach(progress.repairs.keys.sorted(), id: \.self) { index in
+                        if let kind = progress.repairs[index] {
+                            Image(kind.imageName).resizable().scaledToFit().frame(width: 42, height: 42)
+                        }
+                    }
+                }
+                Text("Replay with a different device route to earn the remaining medals.")
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+            }
+            action("OPEN CITY MAP", icon: "map.fill") { leave() }
+        }
+    }
+
+    private func tip(_ icon: String, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon).font(.system(size: 19, weight: .bold)).foregroundStyle(TTRTheme.cyan).frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 12, weight: .heavy)).foregroundStyle(.white)
+                Text(detail).font(.system(size: 13)).foregroundStyle(.white.opacity(0.67))
+            }
+        }
+    }
+    private func sheet<Content: View>(title: String, subtitle: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+        GeometryReader { geo in
+            ZStack {
+                Color.black.opacity(0.78).ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        Text("TRAH TRAHICH · STREET RESCUE").font(.system(size: 10, weight: .heavy, design: .monospaced)).foregroundStyle(TTRTheme.cyan)
+                        Text(title).font(.system(size: 29, weight: .black, design: .rounded)).foregroundStyle(.white)
+                        Text(subtitle).font(.system(size: 14)).foregroundStyle(.white.opacity(0.72))
+                        content()
+                    }
+                    .padding(24).frame(maxWidth: 440, alignment: .leading)
+                    .background(Color(red: 0.025, green: 0.10, blue: 0.22), in: RoundedRectangle(cornerRadius: 24))
+                    .overlay(RoundedRectangle(cornerRadius: 24).stroke(TTRTheme.cyan.opacity(0.4), lineWidth: 1))
+                    .padding(18).frame(maxWidth: .infinity)
+                    .frame(minHeight: geo.size.height)
+                }
+            }
+        }
+    }
+    private func action(_ title: String, icon: String, secondary: Bool = false, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            HStack {
+                Text(title)
+                Spacer()
+                Image(systemName: icon)
+            }.font(.system(size: 14, weight: .heavy, design: .rounded))
+                .foregroundStyle(secondary ? .white : TTRTheme.ink).padding(16)
+                .background(secondary ? Color.white.opacity(0.09) : TTRTheme.cyan, in: RoundedRectangle(cornerRadius: 13))
+        }.buttonStyle(.plain)
+    }
+    private func leave() {
+        scene.pauseRoad()
+        TTRNavigation.shared.currentScreen = .menu
     }
 
     private func wireScene(size: CGSize) {
+        if !configured {
+            scene.prepareRoute(district)
+            configured = true
+        }
         scene.scaleMode = .resizeFill
+        scene.onRouteChanged = { value in DispatchQueue.main.async { hud = value } }
         scene.onScoreChanged = { score in
-            DispatchQueue.main.async {
-                currentScore = score
-                bestScore = max(bestScore, score)
-            }
+            if !district.isTraining { DispatchQueue.main.async { bestScore = max(bestScore, score) } }
         }
         scene.onCoinEarned = { amount in
-            DispatchQueue.main.async {
-                coins += amount
-                if soundEnabled {
-                    playSound(named: "ttrCoinPop")
-                }
-            }
+            if !district.isTraining { DispatchQueue.main.async { coins += amount } }
         }
-        scene.onRoadCoinCollected = { amount in
-            DispatchQueue.main.async {
-                TTRDailyMissionCenter.addProgress(.coins, amount: amount)
-            }
+        scene.onRoadCoinCollected = { _ in
+            if !district.isTraining { TTRDailyMissionCenter.addProgress(.coins) }
+            playSound(named: "ttrCoinPop")
         }
         scene.onMoveCompleted = {
-            DispatchQueue.main.async {
-                TTRDailyMissionCenter.addProgress(.steps)
-                if soundEnabled {
-                    playSound(named: "ttrStepChime")
-                }
-            }
+            if !district.isTraining { TTRDailyMissionCenter.addProgress(.steps) }
+            playSound(named: "ttrStepChime")
         }
         scene.onCrossingCompleted = {
-            DispatchQueue.main.async {
-                TTRDailyMissionCenter.addProgress(.crossings)
-            }
+            if !district.isTraining { TTRDailyMissionCenter.addProgress(.crossings) }
         }
-        scene.onRoadCrash = { score in
-                    DispatchQueue.main.async {
-                        currentScore = score
-                        showGameOver = true
-                        miniGameRequest = nil
-                        if soundEnabled {
-                            playSound(named: "ttrCrashSoft")
-                        }
-                    }
-                }
+        scene.onRoadCrash = { _ in
+            DispatchQueue.main.async { showGameOver = true; miniGameRequest = nil }
+            playSound(named: "ttrCrashSoft")
+        }
         scene.onMiniGameRequested = { kind in
+            DispatchQueue.main.async { miniGameRequest = TTRMiniGameRequest(kind: kind, isTraining: district.isTraining) }
+        }
+        scene.onRouteCompleted = { progress, seconds in
             DispatchQueue.main.async {
-                guard miniGameRequest == nil, !showPause, !showGameOver else { return }
-                miniGameRequest = TTRMiniGameRequest(kind: kind)
+                guard result == nil else { return }
+                completionReward = TTRCityStore.save(progress, seconds: seconds)
+                coins += completionReward
+                routeSeconds = seconds
+                result = progress
             }
         }
         scene.configureScene(size: size)
+        if showIntro || showPause || showGameOver || result != nil { scene.pauseRoad() }
     }
-
-    private func finishMiniGame(_ request: TTRMiniGameRequest, success: Bool) {
-        scene.completeMiniGame(request.kind, success: success)
-        miniGameRequest = nil
-        if success {
-            TTRDailyMissionCenter.addProgress(.miniGames, amount: 1)
-        }
-    }
-
     private func playSound(named name: String) {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "wav") else {
-            return
-        }
+        guard soundEnabled, let url = Bundle.main.url(forResource: name, withExtension: "wav") else { return }
         audioPlayer = try? AVAudioPlayer(contentsOf: url)
-        audioPlayer?.numberOfLoops = 0
         audioPlayer?.volume = 0.62
         audioPlayer?.play()
-    }
-}
-
-struct TTRGameControlBar: View {
-    let score: Int
-    let barrierCharges: Int
-    let hydrantCharges: Int
-    let barrierAction: () -> Void
-    let hydrantAction: () -> Void
-    let upAction: () -> Void
-    let downAction: () -> Void
-    let goAction: () -> Void
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            scoreChip
-
-            Spacer(minLength: 8)
-
-            VStack(spacing: 8) {
-                abilityButton(kind: .barrier, count: barrierCharges, color: TTRTheme.cyan, action: barrierAction)
-                abilityButton(kind: .hydrant, count: hydrantCharges, color: Color(red: 0.95, green: 0.12, blue: 0.08), action: hydrantAction)
-            }
-
-            VStack(spacing: 8) {
-                laneButton(systemImage: "chevron.up", action: upAction)
-                laneButton(systemImage: "chevron.down", action: downAction)
-            }
-
-            Button(action: goAction) {
-                Text("GO")
-                    .font(.system(size: 34, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.55), radius: 0, x: 2, y: 2)
-                    .frame(width: 122, height: 76)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(TTRTheme.green)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.60, green: 1.0, blue: 0.55), lineWidth: 3))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(.white.opacity(0.16))
-                                    .frame(height: 26),
-                                alignment: .top
-                            )
-                            .shadow(color: .black.opacity(0.42), radius: 6, x: 0, y: 5)
-                    )
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var scoreChip: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("DISTANCE")
-                .font(.system(size: 10, weight: .black, design: .rounded))
-                .foregroundStyle(.white.opacity(0.72))
-            Text("\(score)")
-                .font(.system(size: 24, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
-                .monospacedDigit()
-                .shadow(color: .black.opacity(0.8), radius: 0, x: 1.5, y: 1.5)
-        }
-        .padding(.horizontal, 13)
-        .frame(width: 92, height: 58, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(red: 0.01, green: 0.18, blue: 0.47).opacity(0.92))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(TTRTheme.cyan.opacity(0.90), lineWidth: 2))
-                .shadow(color: .black.opacity(0.30), radius: 7, x: 0, y: 4)
-        )
-    }
-
-    private func abilityButton(kind: TTRBoostIconKind, count: Int, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                TTRBoostIconView(kind: kind, color: color, size: 24)
-                Text("\(count)")
-                    .font(.system(size: 12, weight: .black, design: .rounded))
-                    .monospacedDigit()
-            }
-            .foregroundStyle(.white)
-            .frame(width: 64, height: 38)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(count > 0 ? color : Color.white.opacity(0.16))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(count > 0 ? .white.opacity(0.78) : .white.opacity(0.26), lineWidth: 2))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(.white.opacity(count > 0 ? 0.15 : 0.05))
-                            .frame(height: 13),
-                        alignment: .top
-                    )
-            )
-            .shadow(color: .black.opacity(0.24), radius: 4, x: 0, y: 3)
-        }
-        .buttonStyle(.plain)
-        .disabled(count <= 0)
-    }
-
-    private func laneButton(systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 22, weight: .black))
-                .foregroundStyle(.white)
-                .frame(width: 52, height: 36)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(red: 0.04, green: 0.50, blue: 0.92))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(TTRTheme.cyan, lineWidth: 2))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(.white.opacity(0.16))
-                                .frame(height: 13),
-                            alignment: .top
-                        )
-                )
-                .shadow(color: .black.opacity(0.28), radius: 4, x: 0, y: 3)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-struct TTRModalPanel: View {
-    let title: String
-    let primaryTitle: String
-    let primaryIcon: String
-    let primaryColor: Color
-    let primary: () -> Void
-    let secondary: () -> Void
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                Color.black.opacity(0.22)
-                    .ignoresSafeArea()
-                VStack(spacing: 14) {
-                    TTRCapsuleTitle(text: title)
-                    TTRPanel {
-                        VStack(spacing: 12) {
-                            TTRArcadeButton(title: primaryTitle, systemImage: primaryIcon, color: primaryColor, action: primary)
-                            TTRArcadeButton(title: "Menu", systemImage: "house.fill", color: Color(red: 0.03, green: 0.47, blue: 0.92), action: secondary)
-                        }
-                        .frame(width: min(geo.size.width * (geo.size.height > geo.size.width ? 0.66 : 0.35), 330))
-                    }
-                }
-            }
-        }
     }
 }

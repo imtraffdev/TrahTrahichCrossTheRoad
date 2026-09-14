@@ -9,6 +9,23 @@ final class TTRCrossRoadScene: SKScene {
     var onRoadCrash: ((Int) -> Void)?
     var onMiniGameRequested: ((TTRMiniGameKind) -> Void)?
 
+    var onRouteChanged: ((TTRRouteHUDState) -> Void)?
+    var onRouteCompleted: ((TTRRouteProgress, Int) -> Void)?
+    private(set) var route = TTRRouteProgress(district: .all[0])
+    private var elapsed: TimeInterval = 0
+    private var effectUntil: TimeInterval = 0
+    private var effectKind: TTRMiniGameKind?
+    private var effectHub: Int?
+    private var flushRow = 0
+    private var activeDevice: (hub: Int, kind: TTRMiniGameKind)?
+    private var lastHUDSecond = -1
+    private var hint = ""
+    private var collisionGraceUntil: TimeInterval = 0
+
+    func prepareRoute(_ district: TTRDistrict) {
+        route = TTRRouteProgress(district: district)
+    }
+
     private enum LaneKind: Equatable {
         case verge
         case sidewalk
@@ -26,6 +43,7 @@ final class TTRCrossRoadScene: SKScene {
     private var columnNodes: [Int: SKNode] = [:]
     private var cars: [TTRCar] = []
     private var pickups: [SKSpriteNode] = []
+    private var collectedColumns: Set<Int> = []
     private var player = TTRRiggedHeroNode()
     private var playerColumn = 1
     private var playerRow = 2
@@ -40,9 +58,7 @@ final class TTRCrossRoadScene: SKScene {
     private var barrierNodes: [SKNode] = []
     private var roadTheme = TTRRoadTheme.active
     private var lastSceneSize: CGSize = .zero
-    private var safeLandingEvents = 0
     private var lastUpdateTime: TimeInterval = 0
-    private var trafficFreezeUntil: TimeInterval = 0
 
     override init(size: CGSize = CGSize(width: 390, height: 844)) {
         super.init(size: size)
@@ -59,15 +75,37 @@ final class TTRCrossRoadScene: SKScene {
         if lastSceneSize == newSize, player.parent != nil {
             return
         }
+        let wasMoving = isMoving
+        let existingColumn = player.parent == nil ? 1 : playerColumn
+        let oldTrackCount = trackCount
+        let existingRow = player.parent == nil ? 2 : playerRow
         size = newSize
         lastSceneSize = newSize
-        rebuildRoad()
+        let row = Int((Double(existingRow) / Double(max(1, oldTrackCount - 1)) * Double(trackCount - 1)).rounded())
+        flushRow = Int((Double(flushRow) / Double(max(1, oldTrackCount - 1)) * Double(trackCount - 1)).rounded())
+        rebuildRoad(column: existingColumn, row: row)
+        collisionGraceUntil = elapsed + 1.2
+        if isCrashing {
+            onRoadCrash?(score)
+        } else if wasMoving && activeDevice == nil && !route.finished {
+            isRoadPaused = false
+            arriveAtColumn()
+            if isPaused { isRoadPaused = true }
+        }
+        publishRoute()
     }
 
     func stepForward() {
         guard !isMoving, !isRoadPaused, !isCrashing, player.parent != nil else { return }
 
-        let nextColumn = playerColumn + 1
+        guard !route.finished else { return }
+        guard route.canLeave(column: playerColumn) else {
+            hint = "Restore this hub first. Move to a device and tap USE."
+            publishRoute()
+            return
+        }
+        hint = ""
+        let nextColumn = min(playerColumn + 1, route.district.exitColumn)
         renderColumns(around: nextColumn)
 
         isMoving = true
@@ -92,9 +130,10 @@ final class TTRCrossRoadScene: SKScene {
             guard !self.isCrashing else { return }
             self.renderVisibleColumns()
             self.collectPickups()
-            self.rewardSafeLandingIfNeeded()
+            self.arriveAtColumn()
             self.onMoveCompleted?()
             self.isMoving = false
+            self.publishRoute()
             self.checkCollision()
         }
     }
@@ -105,6 +144,7 @@ final class TTRCrossRoadScene: SKScene {
         guard nextRow != playerRow else { return }
 
         isMoving = true
+        hint = ""
         playerRow = nextRow
         player.playWalkStep(duration: 0.18)
 
@@ -116,6 +156,7 @@ final class TTRCrossRoadScene: SKScene {
             self.collectPickups()
             self.onMoveCompleted?()
             self.isMoving = false
+            self.publishRoute()
             self.checkCollision()
         }
     }
@@ -126,8 +167,9 @@ final class TTRCrossRoadScene: SKScene {
     }
 
     func resumeRoad() {
-        isRoadPaused = false
+        isRoadPaused = activeDevice != nil || route.finished || isCrashing
         isPaused = false
+        lastUpdateTime = 0
     }
 
     func restartRoad() {
@@ -136,32 +178,58 @@ final class TTRCrossRoadScene: SKScene {
         isRoadPaused = false
         isCrashing = false
         shieldHitsRemaining = 0
-        safeLandingEvents = 0
-        trafficFreezeUntil = 0
         isPaused = false
-        rebuildRoad()
+        route = TTRRouteProgress(district: route.district)
+        collectedColumns.removeAll()
+        elapsed = 0
+        lastUpdateTime = 0
+        effectUntil = 0
+        effectKind = nil
+        effectHub = nil
+        activeDevice = nil
+        hint = ""
+        rebuildRoad(column: 1, row: trackCount / 2)
+        publishRoute()
+    }
+
+    func useNearbyDevice() {
+        guard !isMoving, !isRoadPaused, !isCrashing, !route.finished,
+              let hub = route.district.hubIndex(at: playerColumn), route.repairs[hub] == nil,
+              let kind = nearbyDevice else { return }
+        activeDevice = (hub, kind)
+        isRoadPaused = true
+        hint = ""
+        onMiniGameRequested?(kind)
     }
 
     func completeMiniGame(_ kind: TTRMiniGameKind, success: Bool) {
+        guard let device = activeDevice, device.kind == kind,
+              route.resolve(hub: device.hub, kind: kind, success: success) else { return }
+        activeDevice = nil
+        isRoadPaused = false
         if success {
+            effectKind = kind
+            effectHub = device.hub
+            effectUntil = elapsed + (route.district.isTraining ? 25 : 7)
+            refreshHub(device.hub)
             switch kind {
             case .signalHack:
-                trafficFreezeUntil = lastUpdateTime + 3.2
                 drawMiniGameRewardFlash(kind: kind)
-                onCoinEarned?(10)
+                hint = "Signal restored. Traffic stopped — cross with GO!"
             case .pressureValve:
-                clearTrafficAroundPlayer(xRange: laneWidth * 5.4, yRange: max(laneWidth * 3.3, size.height * 0.48))
+                flushRow = playerRow
+                flushUpcomingCorridor()
                 drawHydrantWave()
-                onCoinEarned?(14)
+                hint = "Water corridor open. Stay on this row and cross!"
             case .manholeShortcut:
+                hint = "Drain restored. Bypassing traffic — and its coins."
                 applyDrainShortcut()
-                onCoinEarned?(12)
             }
+        } else {
+            hint = route.district.isTraining ? "Device missed. Tap USE to try again here." : "Device missed. Retry here or choose the other device."
         }
-
-        if !(success && kind == .manholeShortcut) {
-            isRoadPaused = false
-        }
+        drawRouteEffect()
+        publishRoute()
     }
 
     func activateBarrierShield() -> Bool {
@@ -205,56 +273,57 @@ final class TTRCrossRoadScene: SKScene {
     }
 
     override func update(_ currentTime: TimeInterval) {
+        let delta = lastUpdateTime == 0 ? 0 : min(max(currentTime - lastUpdateTime, 0), 0.05)
         lastUpdateTime = currentTime
-        guard !isRoadPaused else { return }
-        guard currentTime >= trafficFreezeUntil else {
-            checkCollision()
-            return
-        }
+        guard !isRoadPaused, !route.finished else { return }
+        elapsed += delta
+        let frozen = effectKind == .signalHack && elapsed < effectUntil
         for car in cars {
-            car.node.position.y += car.speed * car.direction
-            if car.node.position.y > size.height + 130 {
-                car.node.position.y = -130
-            }
-            if car.node.position.y < -130 {
-                car.node.position.y = size.height + 130
-            }
+            let inBlock = effectHub.map { car.column > route.district.hubs[$0] && car.column < route.district.nextHub(after: $0) } ?? false
+            if frozen && inBlock { continue }
+            car.node.position.y += car.speed * car.direction * CGFloat(delta * 60)
+            if car.node.position.y > size.height + 130 { car.node.position.y = -130 }
+            if car.node.position.y < -130 { car.node.position.y = size.height + 130 }
+        }
+        if effectKind == .pressureValve && elapsed < effectUntil { flushUpcomingCorridor() }
+        if elapsed >= effectUntil { world.childNode(withName: "cityDeviceEffect")?.removeFromParent() }
+        if Int(elapsed) != lastHUDSecond {
+            lastHUDSecond = Int(elapsed)
+            publishRoute()
         }
         checkCollision()
     }
 
-    private func rebuildRoad() {
+    private func rebuildRoad(column: Int = 1, row: Int? = nil) {
         removeAllChildren()
         world.removeAllChildren()
         world.removeAllActions()
-        world.position = .zero
         columnNodes.removeAll()
         cars.removeAll()
         pickups.removeAll()
         barrierNodes.removeAll()
-        scrollX = 0
-        playerColumn = startColumn()
-        playerRow = startRow()
+        playerColumn = column
+        playerRow = min(trackCount - 1, max(0, row ?? trackCount / 2))
         lastCrossingColumn = playerColumn
         roadTheme = TTRRoadTheme.active
         laneWidth = makeLaneWidth()
-        safeLandingEvents = 0
-        trafficFreezeUntil = 0
-
+        scrollX = scrollOffset(for: playerColumn)
+        world.position = CGPoint(x: -scrollX, y: 0)
+        isMoving = false
         addChild(world)
         renderVisibleColumns()
-
         player = TTRRiggedHeroNode()
-        let playerHeight = max(76, min(size.height * 0.15, laneWidth * 1.75))
+        let playerHeight = max(64, min(size.height * 0.13, laneWidth * 1.60))
         player.setDisplayHeight(playerHeight)
         player.position = CGPoint(x: laneCenter(for: playerColumn), y: rowY(for: playerRow))
         player.zPosition = 50
-        player.xScale = abs(player.xScale)
         world.addChild(player)
+        if shieldHitsRemaining > 0 { drawBarrierShield() }
+        drawRouteEffect()
     }
 
     private func makeLaneWidth() -> CGFloat {
-        let visibleColumns: CGFloat = size.height > size.width ? 8.0 : 12.0
+        let visibleColumns: CGFloat = size.height > size.width ? 6.0 : 10.0
         return max(48, min(82, size.width / visibleColumns))
     }
 
@@ -263,11 +332,11 @@ final class TTRCrossRoadScene: SKScene {
     }
 
     private var playfieldBottom: CGFloat {
-        size.height > size.width ? max(218, size.height * 0.24) : max(118, size.height * 0.22)
+        size.height > size.width ? max(215, size.height * 0.29) : max(156, size.height * 0.40)
     }
 
     private var playfieldTop: CGFloat {
-        size.height > size.width ? size.height * 0.80 : size.height * 0.78
+        size.height > size.width ? size.height * 0.69 : size.height * 0.68
     }
 
     private func rowY(for row: Int) -> CGFloat {
@@ -277,22 +346,9 @@ final class TTRCrossRoadScene: SKScene {
     }
 
     private func laneKind(for column: Int) -> LaneKind {
-        if column <= 0 {
-            return .verge
-        }
-        if column == 1 {
-            return .sidewalk
-        }
-
-        let pattern: [LaneKind] = [
-            .road, .road, .road, .road,
-            .sidewalk, .verge,
-            .road, .road, .road,
-            .sidewalk,
-            .road, .road, .road, .road,
-            .verge, .sidewalk
-        ]
-        return pattern[(column - 2) % pattern.count]
+        if column <= 0 || column > route.district.exitColumn { return .verge }
+        if route.district.hubs.contains(column) || column == route.district.exitColumn { return .sidewalk }
+        return .road
     }
 
     private func renderVisibleColumns() {
@@ -340,7 +396,7 @@ final class TTRCrossRoadScene: SKScene {
             addTraffic(column: column, parent: node)
             addPickupIfNeeded(column: column, parent: node)
         } else if kind == .sidewalk {
-            addSidewalkDetails(column: column, parent: node)
+            drawCityHub(column: column, parent: node)
         }
     }
 
@@ -477,54 +533,76 @@ final class TTRCrossRoadScene: SKScene {
     }
 
     private func addRoadDetails(column: Int, parent: SKNode) {
-        if column > startColumn() + 4 {
-            if column % 17 == 6 {
-                addMiniGameRoadMarker(imageName: "ttrSignalConsole", column: column, yRatio: 0.20, parent: parent)
-            } else if column % 19 == 8 {
-                addMiniGameRoadMarker(imageName: "ttrPressureValve", column: column, yRatio: 0.82, parent: parent)
-            } else if column % 23 == 11 {
-                addMiniGameRoadMarker(imageName: "ttrPortalManhole", column: column, yRatio: 0.50, parent: parent)
+        // Road devices are drawn only at interactive hubs, never as unrelated decoration.
+    }
+
+    private func drawCityHub(column: Int, parent node: SKNode) {
+        let x = laneCenter(for: column)
+        let isExit = column == route.district.exitColumn
+        let hub = route.district.hubIndex(at: column)
+        let restored = hub.map { route.repairs[$0] != nil } ?? false
+        let glow = SKShapeNode(rectOf: CGSize(width: laneWidth - 4, height: size.height))
+        glow.position = CGPoint(x: x, y: size.height / 2)
+        glow.fillColor = (restored || isExit) ? SKColor(red: 0.1, green: 0.8, blue: 0.55, alpha: 0.22) : SKColor(red: 0.1, green: 0.6, blue: 1, alpha: 0.25)
+        glow.strokeColor = (restored || isExit) ? .green : .cyan
+        glow.lineWidth = 2
+        glow.zPosition = 3
+        node.addChild(glow)
+        let label = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+        label.text = isExit ? "EXIT" : (restored ? "ONLINE" : "HUB \(hub.map { $0 + 1 } ?? 0)")
+        label.fontSize = min(12, laneWidth * 0.20)
+        label.fontColor = .white
+        label.position = CGPoint(x: x, y: playfieldTop + (size.width > size.height ? 26 : 53))
+        label.zPosition = 8
+        node.addChild(label)
+        guard let hub else { return }
+        for (index, kind) in route.district.blocks[hub].devices.enumerated() {
+            let row = deviceRow(hub: hub, index: index)
+            let ring = SKShapeNode(circleOfRadius: laneWidth * 0.40)
+            ring.position = CGPoint(x: x, y: rowY(for: row))
+            ring.fillColor = SKColor(red: 0.02, green: 0.13, blue: 0.3, alpha: 0.9)
+            ring.strokeColor = restored ? .green : .cyan
+            ring.lineWidth = 3
+            ring.zPosition = 9
+            node.addChild(ring)
+            let icon = SKSpriteNode(imageNamed: kind.imageName)
+            icon.size = CGSize(width: laneWidth * 0.70, height: laneWidth * 0.70)
+            icon.position = ring.position
+            icon.zPosition = 10
+            icon.alpha = restored ? 0.40 : 1
+            node.addChild(icon)
+            if !restored {
+                ring.run(.repeatForever(.sequence([.fadeAlpha(to: 0.45, duration: 0.7), .fadeAlpha(to: 1, duration: 0.7)])))
             }
         }
-
-        guard column % 5 == 0 else { return }
-        let manhole = SKSpriteNode(imageNamed: "ttrBlueManhole")
-        let side = min(laneWidth * 0.70, 78)
-        manhole.size = CGSize(width: side, height: side)
-        manhole.position = CGPoint(x: laneCenter(for: column), y: size.height * (column.isMultiple(of: 2) ? 0.30 : 0.72))
-        manhole.zPosition = 5
-        parent.addChild(manhole)
     }
 
-    private func addMiniGameRoadMarker(imageName: String, column: Int, yRatio: CGFloat, parent: SKNode) {
-        let marker = SKSpriteNode(imageNamed: imageName)
-        let side = min(laneWidth * 0.58, 52)
-        marker.size = CGSize(width: side, height: side)
-        marker.position = CGPoint(x: laneCenter(for: column), y: size.height * yRatio)
-        marker.zPosition = 6
-        marker.alpha = 0.76
-        parent.addChild(marker)
+    private func refreshHub(_ hub: Int) {
+        let column = route.district.hubs[hub]
+        if let node = columnNodes.removeValue(forKey: column) { node.removeFromParent() }
+        addColumn(column)
     }
 
-    private func addSidewalkDetails(column: Int, parent: SKNode) {
-        guard column > startColumn(), column % 6 == 1 else { return }
-        let hydrant = SKSpriteNode(imageNamed: "ttrHydrantRed")
-        hydrant.size = CGSize(width: min(laneWidth * 0.58, 54), height: min(laneWidth * 0.88, 82))
-        hydrant.position = CGPoint(x: laneCenter(for: column), y: size.height * 0.24)
-        hydrant.zPosition = 8
-        parent.addChild(hydrant)
+    private func deviceRow(hub: Int, index: Int) -> Int {
+        if route.district.isTraining { return hub == 1 ? 0 : trackCount - 1 }
+        return index == 0 ? trackCount - 1 : 0
+    }
+
+    private var nearbyDevice: TTRMiniGameKind? {
+        guard let hub = route.district.hubIndex(at: playerColumn), route.repairs[hub] == nil else { return nil }
+        return route.district.blocks[hub].devices.enumerated().first { deviceRow(hub: hub, index: $0.offset) == playerRow }?.element
     }
 
     private func addTraffic(column: Int, parent: SKNode) {
         let choices = ["ttrGreenCar", "ttrTaxiCar", "ttrVioletCar"]
         let direction: CGFloat = column.isMultiple(of: 2) ? 1 : -1
-        let speedBoost = min(CGFloat(max(playerColumn - 1, 0)) * 0.012, 1.35)
-        let baseSpeed = CGFloat(2.35 + Double(column % 4) * 0.48) + speedBoost
-        let carCount = size.height > size.width ? 1 : 2
+        let baseSpeed = CGFloat((1.65 + Double(column % 4) * 0.35) * route.district.speed)
+        let carCount = route.district.id >= 4 ? 2 : 1
 
         for offset in 0..<carCount {
             let textureName = choices[(column + offset) % choices.count]
             let car = SKSpriteNode(imageNamed: textureName)
+            car.name = "ttrTrafficCar"
             car.size = CGSize(width: min(laneWidth * 0.64, 64), height: min(laneWidth * 1.03, 98))
             let spacing = size.height / CGFloat(max(carCount, 1))
             car.position = CGPoint(
@@ -541,11 +619,10 @@ final class TTRCrossRoadScene: SKScene {
     }
 
     private func addPickupIfNeeded(column: Int, parent: SKNode) {
-        guard (column * 17 + 11) % 4 != 0 else { return }
+        guard column.isMultiple(of: 2), !collectedColumns.contains(column) else { return }
         let coin = SKSpriteNode(imageNamed: "ttrRoadCoin")
         let side = min(laneWidth * 0.54, 44)
-        let visibleRows = max(trackCount - 1, 1)
-        let targetRow = seeded(column, 41) % visibleRows
+        let targetRow = column.isMultiple(of: 4) ? trackCount - 1 : 0
         coin.size = CGSize(width: side, height: side)
         coin.position = CGPoint(
             x: laneCenter(for: column),
@@ -565,13 +642,16 @@ final class TTRCrossRoadScene: SKScene {
 
     private func collectPickups() {
         let playerBox = playerHitBox()
-        for coin in pickups where coin.parent != nil {
+        for coin in pickups where coin.parent != nil && coin.name == "ttrRoadCoin" {
             let coinBox = centeredRect(
                 at: coin.position,
                 width: coin.size.width * 1.10,
                 height: coin.size.height * 1.10
             )
             guard playerBox.intersects(coinBox) else { continue }
+            coin.name = "ttrCollectedCoin"
+            collectedColumns.insert(Int(coin.position.x / laneWidth))
+            route.collectCoin()
             coin.removeAllActions()
             coin.run(.sequence([
                 .group([
@@ -587,56 +667,77 @@ final class TTRCrossRoadScene: SKScene {
         pickups.removeAll { $0.parent == nil }
     }
 
-    private func rewardSafeLandingIfNeeded() {
-        guard laneKind(for: playerColumn) != .road, playerColumn > lastCrossingColumn else { return }
-        lastCrossingColumn = playerColumn
-        safeLandingEvents += 1
-        score += 5
-        onScoreChanged?(score)
-        onCoinEarned?(8)
-        onCrossingCompleted?()
-
-        let flash = SKShapeNode(rectOf: CGSize(width: laneWidth * 1.1, height: size.height + 4))
-        flash.fillColor = SKColor(red: 0.0, green: 0.68, blue: 1.0, alpha: 0.14)
-        flash.strokeColor = .clear
-        flash.position = CGPoint(x: laneCenter(for: playerColumn), y: size.height / 2)
-        flash.zPosition = 12
-        world.addChild(flash)
-        flash.run(SKAction.sequence([.fadeOut(withDuration: 0.30), .removeFromParent()]))
-
-        requestMiniGameAfterLandingIfNeeded()
+    private func arriveAtColumn() {
+        if route.finish(at: playerColumn) {
+            isRoadPaused = true
+            onRouteCompleted?(route, Int(elapsed))
+            publishRoute()
+            return
+        }
+        if let hub = route.district.hubIndex(at: playerColumn), playerColumn > lastCrossingColumn {
+            lastCrossingColumn = playerColumn
+            effectKind = nil
+            effectHub = nil
+            world.childNode(withName: "cityDeviceEffect")?.removeFromParent()
+            hint = route.district.blocks[hub].briefing
+            onCrossingCompleted?()
+        }
+        publishRoute()
     }
 
-    private func requestMiniGameAfterLandingIfNeeded() {
-        guard safeLandingEvents >= 2, safeLandingEvents.isMultiple(of: 2), !isCrashing else { return }
-        let order: [TTRMiniGameKind] = [.signalHack, .pressureValve, .manholeShortcut]
-        let kind = order[((safeLandingEvents / 2) - 1) % order.count]
-        drawMiniGameMarker(kind: kind)
-        isRoadPaused = true
-        onMiniGameRequested?(kind)
+    private func flushUpcomingCorridor() {
+        guard let hub = effectHub else { return }
+        let lower = route.district.hubs[hub]
+        let upper = route.district.nextHub(after: hub)
+        let corridorY = rowY(for: flushRow) + player.displaySize.height * 0.38
+        for car in cars where car.column > lower && car.column < upper && abs(car.node.position.y - corridorY) < laneWidth * 1.05 {
+            // Divert traffic around the protected row; keep the other rows dangerous.
+            car.node.position.y = corridorY + car.direction * laneWidth * 1.45
+            car.node.run(.sequence([.fadeAlpha(to: 0.3, duration: 0.08), .fadeAlpha(to: 1, duration: 0.18)]), withKey: "waterDeflection")
+        }
     }
 
-    private func drawMiniGameMarker(kind: TTRMiniGameKind) {
-        let marker = SKSpriteNode(imageNamed: kind.imageName)
-        marker.size = CGSize(width: min(laneWidth * 1.08, 82), height: min(laneWidth * 1.08, 82))
-        marker.position = CGPoint(
-            x: player.position.x + laneWidth * 0.18,
-            y: min(size.height - marker.size.height * 0.70, player.position.y + player.displaySize.height * 1.05)
-        )
-        marker.zPosition = 65
-        marker.setScale(0.25)
-        marker.alpha = 0
-        world.addChild(marker)
-        marker.run(.sequence([
-            .group([.fadeIn(withDuration: 0.10), .scale(to: 1.0, duration: 0.18)]),
-            .wait(forDuration: 0.82),
-            .group([.fadeOut(withDuration: 0.18), .scale(to: 0.72, duration: 0.18)]),
-            .removeFromParent()
-        ]))
+    private func drawRouteEffect() {
+        world.childNode(withName: "cityDeviceEffect")?.removeFromParent()
+        guard elapsed < effectUntil, let hub = effectHub, let kind = effectKind, kind != .manholeShortcut else { return }
+        let firstRoad = route.district.hubs[hub] + 1
+        let width = CGFloat(route.district.blocks[hub].lanes) * laneWidth
+        let height = kind == .signalHack ? size.height : laneWidth * 1.8
+        let band = SKShapeNode(rectOf: CGSize(width: width, height: height), cornerRadius: 6)
+        band.name = "cityDeviceEffect"
+        band.position = CGPoint(x: CGFloat(firstRoad) * laneWidth + width / 2,
+                                y: kind == .signalHack ? size.height / 2 : rowY(for: flushRow) + player.displaySize.height * 0.38)
+        band.fillColor = SKColor(red: 0.08, green: 0.80, blue: 1, alpha: kind == .signalHack ? 0.12 : 0.35)
+        band.strokeColor = SKColor(red: 0.40, green: 0.95, blue: 1, alpha: 0.8)
+        band.lineWidth = kind == .signalHack ? 1 : 3
+        band.zPosition = 7
+        world.addChild(band)
+        band.run(.repeatForever(.sequence([.fadeAlpha(to: 0.65, duration: 0.55), .fadeAlpha(to: 1, duration: 0.55)])))
+    }
+
+    private func publishRoute() {
+        let hub = route.district.hubIndex(at: playerColumn)
+        let restored = hub.map { route.repairs[$0] != nil } ?? false
+        let device = nearbyDevice
+        let seconds = max(0, Int(ceil(effectUntil - elapsed)))
+        let activeEffect = seconds > 0 ? effectKind : nil
+        let message: String
+        if hint.hasPrefix("Device missed") { message = hint }
+        else if let device { message = "\(device.title) ready. Tap USE to restore this hub." }
+        else if !hint.isEmpty && (effectKind == nil || seconds > 0) { message = hint }
+        else if activeEffect == .signalHack { message = "Traffic is frozen for \(seconds)s. Use GO to cross; arrows line up with coins." }
+        else if activeEffect == .pressureValve { message = "Water corridor open for \(seconds)s. Stay on the cleared row and use GO." }
+        else if let hub, !restored { message = route.district.blocks[hub].briefing }
+        else { message = "Reach the next safe hub. GO moves right; arrows change your row." }
+        onRouteChanged?(TTRRouteHUDState(repaired: route.repairs.count, total: route.district.blocks.count,
+            column: playerColumn, exitColumn: route.district.exitColumn, coins: route.roadCoins,
+            target: route.district.coinTarget, nearby: device, canGo: route.canLeave(column: playerColumn),
+            message: message, effect: activeEffect, effectSeconds: seconds, hub: hub,
+            firstTry: route.firstTryRepairs))
     }
 
     private func checkCollision() {
-        guard !isRoadPaused, !isCrashing, player.parent != nil else { return }
+        guard !isRoadPaused, !isCrashing, !route.finished, elapsed >= collisionGraceUntil, player.parent != nil else { return }
         let playerBox = playerHitBox()
         for car in cars where abs(car.node.position.x - player.position.x) < laneWidth * 0.58 {
             let carBox = centeredRect(
@@ -653,7 +754,14 @@ final class TTRCrossRoadScene: SKScene {
                     absorbCrash(with: car.node)
                     return
                 }
-                startCrashSequence()
+                if route.district.isTraining {
+                    collisionGraceUntil = elapsed + 1.5
+                    player.flashHit()
+                    hint = "Practice shield caught that hit. Watch for gaps before GO."
+                    publishRoute()
+                } else {
+                    startCrashSequence()
+                }
                 return
             }
         }
@@ -801,14 +909,9 @@ final class TTRCrossRoadScene: SKScene {
         }
 
         let origin = player.position
-        let maxTargetColumn = playerColumn + 8
-        var targetColumn = playerColumn + 2
-        while targetColumn <= maxTargetColumn, laneKind(for: targetColumn) == .road {
-            targetColumn += 1
-        }
-        if targetColumn > maxTargetColumn {
-            targetColumn = playerColumn + 3
-        }
+        guard let hub = route.district.hubIndex(at: playerColumn) else { return }
+        let targetColumn = route.district.nextHub(after: hub)
+        isRoadPaused = true
 
         renderColumns(around: targetColumn)
         isMoving = true
@@ -838,9 +941,9 @@ final class TTRCrossRoadScene: SKScene {
             guard let self else { return }
             self.renderVisibleColumns()
             self.collectPickups()
-            self.lastCrossingColumn = max(self.lastCrossingColumn, self.playerColumn)
             self.isMoving = false
             self.isRoadPaused = false
+            self.arriveAtColumn()
             self.checkCollision()
         }
     }
@@ -971,11 +1074,8 @@ final class TTRCrossRoadScene: SKScene {
     }
 
     private var roadColor: SKColor {
-        switch roadTheme {
-        case .midnight: SKColor(red: 0.04, green: 0.06, blue: 0.075, alpha: 1)
-        case .meadow: SKColor(red: 0.13, green: 0.15, blue: 0.13, alpha: 1)
-        case .sunset: SKColor(red: 0.18, green: 0.10, blue: 0.13, alpha: 1)
-        }
+        // Shared asphalt color across every district and cosmetic road style: #133158.
+        SKColor(red: 19.0 / 255.0, green: 49.0 / 255.0, blue: 88.0 / 255.0, alpha: 1)
     }
 
     private var roadFleckColor: SKColor {

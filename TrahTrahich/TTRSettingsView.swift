@@ -34,9 +34,14 @@ struct TTRSettingsView: View {
                 coins = 0
                 bestScore = 0
                 TTRDailyMissionCenter.resetAllProgress()
+                TTRCityStore.reset()
+                UserDefaults.standard.set(0, forKey: "ttrBarrierCharges")
+                UserDefaults.standard.set(0, forKey: "ttrHydrantCharges")
+                for theme in TTRRoadTheme.allCases { UserDefaults.standard.removeObject(forKey: theme.defaultsKey) }
+                TTRShopCatalog.activate(.midnight)
             }
         } message: {
-            Text("Coins and best distance will be cleared on this device.")
+            Text("Coins, gear, road styles, training, district medals and route records will be cleared on this device.")
         }
     }
 

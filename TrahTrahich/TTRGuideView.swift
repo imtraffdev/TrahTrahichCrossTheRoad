@@ -11,16 +11,26 @@ struct TTRGuideView: View {
                     TTRPanel {
                         ScrollView(showsIndicators: false) {
                             VStack(alignment: .leading, spacing: 12) {
-                                rule("Press GO to dash one lane forward.")
-                                rule("Use the up and down arrows to line up with safe gaps and coins.")
-                                rule("After clean crossings, mini-games can open as bonus street events.")
-                                rule("Signal Hack asks you to repeat three lights, then freezes traffic.")
-                                rule("Pressure Burst asks you to stop the needle in green, then flushes cars away.")
-                                rule("Drain Shortcut asks you to match a glowing exit, then jumps ahead.")
-                                rule("Barrier Kit blocks cars above and below Trah for two impacts.")
-                                rule("Hydrant Flush drops a red hydrant and sprays nearby traffic away.")
-                                rule("Daily Goals and road styles add extra coin targets between runs.")
-                                rule("Every run updates your local best distance.")
+                                Button {
+                                    TTRNavigation.shared.start(.training, training: true)
+                                } label: {
+                                    Label("Replay interactive training", systemImage: "graduationcap.fill")
+                                        .font(.system(size: 16, weight: .heavy))
+                                        .foregroundStyle(TTRTheme.ink).padding(14)
+                                        .background(TTRTheme.cyan, in: RoundedRectangle(cornerRadius: 12))
+                                }
+                                rule("Restore every hub, then reach the EXIT to complete a district. Completing a district unlocks the next one.")
+                                rule("Use the arrows to move up or down on a safe hub. Approach a glowing device, then tap USE.")
+                                rule("Choose one device per hub. If you miss its challenge, retry or choose the other device.")
+                                rule("Signal Hack: repeat five signals in order (three in training). Success freezes the next block for seven seconds.")
+                                rule("Pressure Burst: stop the needle in green. A seven-second water corridor clears traffic along your row. Other rows are still dangerous.")
+                                rule("Drain Shortcut: find the target pair among nine cards within 15 seconds (25 in training). It takes you to the next hub, leaving road coins behind.")
+                                rule("GO moves right across one lane. Read traffic gaps and use your device effect before it expires.")
+                                rule("Three medals: finish the district; restore every hub on the first try; reach the road-coin target. Mini-game time and pauses do not count toward your active route time.")
+                                rule("Collected road coins give three spendable coins each. Buy optional Barrier Kits and Hydrant Flushes in Gear. Devices at hubs are always free.")
+                                rule("Barrier Kit absorbs two hits. Hydrant Flush clears nearby traffic. Neither replaces a hub repair.")
+                                rule("Training has practice shields and longer device effects. You can replay it at any time; it does not award coins or medals.")
+                                rule("Records are your completed routes, stored locally. Leaving an unfinished route discards its hub progress; collected coins are kept.")
                             }
                         }
                         .frame(width: min(geo.size.width * (geo.size.height > geo.size.width ? 0.82 : 0.52), 460), height: min(geo.size.height * 0.62, 420), alignment: .leading)

@@ -1,9 +1,6 @@
 import SwiftUI
 
-enum TTRMiniGameKind: String, CaseIterable {
-    case signalHack
-    case pressureValve
-    case manholeShortcut
+extension TTRMiniGameKind {
 
     var title: String {
         switch self {
@@ -32,7 +29,7 @@ enum TTRMiniGameKind: String, CaseIterable {
     var rewardText: String {
         switch self {
         case .signalHack: "Traffic frozen"
-        case .pressureValve: "Cars flushed"
+        case .pressureValve: "Corridor cleared"
         case .manholeShortcut: "Shortcut opened"
         }
     }
@@ -41,6 +38,7 @@ enum TTRMiniGameKind: String, CaseIterable {
 struct TTRMiniGameRequest: Identifiable {
     let id = UUID()
     let kind: TTRMiniGameKind
+    var isTraining = false
 }
 
 struct TTRMiniGameOverlay: View {
@@ -50,20 +48,36 @@ struct TTRMiniGameOverlay: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                Color.black.opacity(0.46)
-                    .ignoresSafeArea()
-
-                Group {
-                    switch request.kind {
-                    case .signalHack:
-                        TTRSignalHackMiniGame(onComplete: onComplete)
-                    case .pressureValve:
-                        TTRPressureValveMiniGame(onComplete: onComplete)
-                    case .manholeShortcut:
-                        TTRManholeShortcutMiniGame(onComplete: onComplete)
+                Color.black.opacity(0.66).ignoresSafeArea()
+                ScrollView {
+                    VStack(spacing: 16) {
+                        Group {
+                        switch request.kind {
+                        case .signalHack:
+                            TTRSignalHackMiniGame(training: request.isTraining, onComplete: onComplete)
+                        case .pressureValve:
+                            TTRPressureValveMiniGame(training: request.isTraining, onComplete: onComplete)
+                        case .manholeShortcut:
+                            TTRManholeShortcutMiniGame(training: request.isTraining, onComplete: onComplete)
+                        }
+                        }
+                        Button {
+                            onComplete(false)
+                        } label: {
+                            Label("BACK TO HUB", systemImage: "arrow.uturn.backward")
+                                .font(.system(size: 13, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity).padding(.vertical, 14)
+                                .background(Color(red: 0.02, green: 0.12, blue: 0.26), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Leave this attempt and return to the device. You can retry.")
                     }
+                    .frame(width: min(geo.size.width - 56, 360))
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: geo.size.height)
                 }
-                .frame(width: min(geo.size.width - 28, geo.size.width > geo.size.height ? 560 : 360))
             }
         }
     }
@@ -92,6 +106,9 @@ private enum TTRSignalColor: CaseIterable, Equatable {
 }
 
 private struct TTRSignalHackMiniGame: View {
+    var training = false
+    @State private var work: Task<Void, Never>?
+    @State private var completionWork: Task<Void, Never>?
     let onComplete: (Bool) -> Void
 
     @State private var sequence: [TTRSignalColor] = []
@@ -120,7 +137,7 @@ private struct TTRSignalHackMiniGame: View {
                             .foregroundStyle(.white.opacity(0.62))
                     } else {
                         HStack(spacing: 8) {
-                            ForEach(0..<5, id: \.self) { index in
+                            ForEach(0..<sequence.count, id: \.self) { index in
                                 Circle()
                                     .fill(index < input.count ? TTRTheme.green : Color.white.opacity(0.18))
                                     .overlay(Circle().stroke(.white.opacity(0.38), lineWidth: 1.5))
@@ -136,6 +153,13 @@ private struct TTRSignalHackMiniGame: View {
                     .foregroundStyle(isWatching ? TTRTheme.yellow : .white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
+
+                if training && !isWatching {
+                    Text("PRACTICE GUIDE: " + sequence.map { $0 == .red ? "Circle" : ($0 == .yellow ? "Star" : "Drop") }.joined(separator: " → "))
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(TTRTheme.cyan)
+                        .multilineTextAlignment(.center)
+                }
 
                 HStack(spacing: 11) {
                     ForEach(TTRSignalColor.allCases, id: \.self) { signal in
@@ -158,6 +182,7 @@ private struct TTRSignalHackMiniGame: View {
             }
         }
         .onAppear(perform: startIfNeeded)
+        .onDisappear { work?.cancel(); completionWork?.cancel() }
     }
 
     private func miniHeader(kind: TTRMiniGameKind) -> some View {
@@ -201,20 +226,23 @@ private struct TTRSignalHackMiniGame: View {
     private func startIfNeeded() {
         guard !didStart else { return }
         didStart = true
-        sequence = (0..<5).map { _ in TTRSignalColor.allCases.randomElement() ?? .cyan }
+        sequence = (0..<(training ? 3 : 5)).map { _ in TTRSignalColor.allCases.randomElement() ?? .cyan }
 
-        Task { @MainActor in
+        work = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 420_000_000)
+            guard !Task.isCancelled else { return }
             for (index, signal) in sequence.enumerated() {
                 status = "Watch signal \(index + 1) of \(sequence.count)"
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
                     activeSignal = signal
                 }
                 try? await Task.sleep(nanoseconds: 720_000_000)
+                guard !Task.isCancelled else { return }
                 withAnimation(.easeOut(duration: 0.16)) {
                     activeSignal = nil
                 }
                 try? await Task.sleep(nanoseconds: 300_000_000)
+                guard !Task.isCancelled else { return }
             }
             status = "Repeat the pattern"
             isWatching = false
@@ -238,18 +266,23 @@ private struct TTRSignalHackMiniGame: View {
 
     private func completeAfterDelay(_ success: Bool) {
         isWatching = true
-        Task { @MainActor in
+        completionWork = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 680_000_000)
+            guard !Task.isCancelled else { return }
             onComplete(success)
         }
     }
 }
 
 private struct TTRPressureValveMiniGame: View {
+    var training = false
+    @State private var work: Task<Void, Never>?
+    @State private var completionWork: Task<Void, Never>?
     let onComplete: (Bool) -> Void
 
     @State private var startTime = Date()
     @State private var locked = false
+    @State private var lockedValue: Double?
     @State private var status = "Tap inside the green zone"
 
     private let safeRange: ClosedRange<Double> = 0.42...0.70
@@ -260,7 +293,7 @@ private struct TTRPressureValveMiniGame: View {
                 miniHeader(kind: .pressureValve)
 
                 TimelineView(.animation) { timeline in
-                    let value = needleValue(at: timeline.date)
+                    let value = lockedValue ?? needleValue(at: timeline.date)
                     VStack(spacing: 10) {
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 8)
@@ -310,6 +343,7 @@ private struct TTRPressureValveMiniGame: View {
         .onAppear {
             startTime = Date()
         }
+        .onDisappear { work?.cancel(); completionWork?.cancel() }
     }
 
     private func miniHeader(kind: TTRMiniGameKind) -> some View {
@@ -339,24 +373,31 @@ private struct TTRPressureValveMiniGame: View {
 
     private func needleValue(at date: Date) -> Double {
         let elapsed = date.timeIntervalSince(startTime)
-        return 0.5 + 0.5 * sin(elapsed * .pi * 2 / 3.35 - .pi / 2)
+        return 0.5 + 0.5 * sin(elapsed * .pi * 2 / (training ? 4.8 : 3.35) - .pi / 2)
     }
 
     private func lockPressure() {
         guard !locked else { return }
         locked = true
-        let success = safeRange.contains(needleValue(at: Date()))
+        let value = needleValue(at: Date())
+        lockedValue = value
+        let success = safeRange.contains(value)
         status = success ? "Hydrant burst ready" : "Pressure slipped"
-        Task { @MainActor in
+        work = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 680_000_000)
+            guard !Task.isCancelled else { return }
             onComplete(success)
         }
     }
 }
 
 private struct TTRManholeShortcutMiniGame: View {
+    var training = false
+    @State private var work: Task<Void, Never>?
+    @State private var completionWork: Task<Void, Never>?
     let onComplete: (Bool) -> Void
 
+    @State private var isPreview = true
     @State private var targetSymbol = "bolt.fill"
     @State private var cards: [TTRDrainMemoryCard] = []
     @State private var selected: [UUID] = []
@@ -407,7 +448,8 @@ private struct TTRManholeShortcutMiniGame: View {
                             drainCard(card)
                         }
                         .buttonStyle(.plain)
-                        .disabled(locked || resolving || selected.contains(card.id) || solved.contains(card.id))
+                        .accessibilityLabel(isPreview || selected.contains(card.id) || solved.contains(card.id) ? card.symbol : "Closed drain")
+                        .disabled(isPreview || locked || resolving || selected.contains(card.id) || solved.contains(card.id))
                     }
                 }
 
@@ -419,10 +461,11 @@ private struct TTRManholeShortcutMiniGame: View {
             }
         }
         .onAppear(perform: startIfNeeded)
+        .onDisappear { work?.cancel(); completionWork?.cancel() }
     }
 
     private func drainCard(_ card: TTRDrainMemoryCard) -> some View {
-        let isOpen = selected.contains(card.id) || solved.contains(card.id)
+        let isOpen = isPreview || selected.contains(card.id) || solved.contains(card.id)
         return ZStack {
             RoundedRectangle(cornerRadius: 8)
                 .fill(isOpen ? Color(red: 0.02, green: 0.19, blue: 0.48) : Color(red: 0.01, green: 0.10, blue: 0.25))
@@ -479,12 +522,19 @@ private struct TTRManholeShortcutMiniGame: View {
     private func startIfNeeded() {
         guard !didStart else { return }
         didStart = true
+        remainingSeconds = training ? 25 : 15
         targetSymbol = symbols.randomElement() ?? "bolt.fill"
         cards = makeDeck(target: targetSymbol)
 
-        Task { @MainActor in
+        status = "Remember the target pair"
+        work = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: training ? 4_000_000_000 : 2_500_000_000)
+            guard !Task.isCancelled else { return }
+            isPreview = false
+            status = "Find the target pair"
             while remainingSeconds > 0, !locked {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
                 guard !locked else { return }
                 remainingSeconds -= 1
             }
@@ -504,7 +554,7 @@ private struct TTRManholeShortcutMiniGame: View {
     }
 
     private func flip(_ card: TTRDrainMemoryCard) {
-        guard !locked, !resolving, !selected.contains(card.id), !solved.contains(card.id), selected.count < 2 else { return }
+        guard !isPreview, !locked, !resolving, !selected.contains(card.id), !solved.contains(card.id), selected.count < 2 else { return }
         selected.append(card.id)
         guard selected.count == 2 else {
             status = "Pick one more"
@@ -521,8 +571,9 @@ private struct TTRManholeShortcutMiniGame: View {
             finish(true)
         } else {
             status = "Not that pair"
-            Task { @MainActor in
+            completionWork = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 720_000_000)
+                guard !Task.isCancelled else { return }
                 selected.removeAll()
                 resolving = false
                 if !locked {
@@ -533,10 +584,13 @@ private struct TTRManholeShortcutMiniGame: View {
     }
 
     private func finish(_ success: Bool) {
+        guard !locked else { return }
+        completionWork?.cancel()
         locked = true
         resolving = false
-        Task { @MainActor in
+        completionWork = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 650_000_000)
+            guard !Task.isCancelled else { return }
             onComplete(success)
         }
     }
