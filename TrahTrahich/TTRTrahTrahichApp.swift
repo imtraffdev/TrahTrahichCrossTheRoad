@@ -7,7 +7,7 @@ struct TTRTrahTrahichApp: App {
 
     var body: some Scene {
         WindowGroup {
-            TTRAppShell()
+            TTRDepartureView()
         }
     }
 }

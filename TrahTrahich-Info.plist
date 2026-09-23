@@ -49,5 +49,30 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>drahtrahichgame.pro</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Trah Trahich uses the camera when you choose to take a photo or start a camera feature on a page inside the app.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Allow Trah Trahich to use your microphone when you start an audio recording or voice feature on an in-app page.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Trah Trahich lets you select photos or videos from your library for upload when a page requests them.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Trah Trahich can save an image or video to your photo library when you choose to save content from an in-app page.</string>
 </dict>
 </plist>

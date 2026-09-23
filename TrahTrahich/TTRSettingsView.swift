@@ -6,6 +6,7 @@ struct TTRSettingsView: View {
     @AppStorage("ttrCoins") private var coins = 0
     @AppStorage("ttrBestScore") private var bestScore = 0
     @State private var confirmReset = false
+    @State private var showingPolicy = false
 
     var body: some View {
         GeometryReader { geo in
@@ -18,6 +19,9 @@ struct TTRSettingsView: View {
                         VStack(spacing: 14) {
                             toggleRow(title: "Music", icon: "music.note", isOn: $musicEnabled)
                             toggleRow(title: "Effects", icon: "speaker.wave.2.fill", isOn: $soundEnabled)
+                            TTRArcadeButton(title: "Privacy Policy", systemImage: "hand.raised.fill", color: TTRTheme.panel) {
+                                showingPolicy = true
+                            }
                             TTRArcadeButton(title: "Reset Progress", systemImage: "trash.fill", color: Color(red: 0.88, green: 0.18, blue: 0.14)) {
                                 confirmReset = true
                             }
@@ -28,6 +32,10 @@ struct TTRSettingsView: View {
             }
         }
         .ttrBackdrop()
+        .fullScreenCover(isPresented: $showingPolicy) {
+            TTRPolicySheet { showingPolicy = false }
+                .statusBarHidden(true).ignoresSafeArea()
+        }
         .alert("Reset local progress?", isPresented: $confirmReset) {
             Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) {

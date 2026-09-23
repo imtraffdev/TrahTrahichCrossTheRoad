@@ -5,28 +5,24 @@
 	};
 	objectVersion = 77;
 	objects = {
+        C17000000000000000000001 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = TrahTrahichTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+        C17000000000000000000002 = {isa = PBXFileSystemSynchronizedRootGroup; path = TrahTrahichTests; sourceTree = "<group>"; };
+        C17000000000000000000003 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        C17000000000000000000004 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        C17000000000000000000005 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        C17000000000000000000006 = {isa = PBXContainerItemProxy; containerPortal = FACBFC212CFE34D60078BD7A; proxyType = 1; remoteGlobalIDString = FACBFC282CFE34D60078BD7A; remoteInfo = "Trah Trahich - Cross The Road"; };
+        C17000000000000000000007 = {isa = PBXTargetDependency; target = FACBFC282CFE34D60078BD7A; targetProxy = C17000000000000000000006; };
+        C17000000000000000000008 = {isa = PBXNativeTarget; buildConfigurationList = C17000000000000000000009; buildPhases = (C17000000000000000000003, C17000000000000000000004, C17000000000000000000005); buildRules = (); dependencies = (C17000000000000000000007); fileSystemSynchronizedGroups = (C17000000000000000000002); name = TrahTrahichTests; productName = TrahTrahichTests; productReference = C17000000000000000000001; productType = "com.apple.product-type.bundle.unit-test"; };
+        C17000000000000000000009 = {isa = XCConfigurationList; buildConfigurations = (C1700000000000000000000A, C1700000000000000000000B); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+        C1700000000000000000000A = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.6; PRODUCT_BUNDLE_IDENTIFIER = com.trahtrahich.game.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Trah Trahich - Cross The Road.app/Trah Trahich - Cross The Road"; }; name = Debug; };
+        C1700000000000000000000B = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.6; PRODUCT_BUNDLE_IDENTIFIER = com.trahtrahich.game.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Trah Trahich - Cross The Road.app/Trah Trahich - Cross The Road"; }; name = Release; };
 
-/* Begin PBXContainerItemProxy section */
-		C17000000000000000000006 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = FACBFC212CFE34D60078BD7A /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = FACBFC282CFE34D60078BD7A;
-			remoteInfo = "Trah Trahich - Cross The Road";
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		C17000000000000000000001 /* TrahTrahichTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = TrahTrahichTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FACBFC292CFE34D60078BD7A /* Trah Trahich - Cross The Road.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Trah Trahich - Cross The Road.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		C17000000000000000000002 /* TrahTrahichTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = TrahTrahichTests;
-			sourceTree = "<group>";
-		};
 		FACBFC2B2CFE34D60078BD7A /* TrahTrahich */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = TrahTrahich;
@@ -35,13 +31,6 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		C17000000000000000000004 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		FACBFC262CFE34D60078BD7A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -56,7 +45,7 @@
 			isa = PBXGroup;
 			children = (
 				FACBFC2B2CFE34D60078BD7A /* TrahTrahich */,
-				C17000000000000000000002 /* TrahTrahichTests */,
+                C17000000000000000000002,
 				FACBFC2A2CFE34D60078BD7A /* Products */,
 			);
 			sourceTree = "<group>";
@@ -65,7 +54,7 @@
 			isa = PBXGroup;
 			children = (
 				FACBFC292CFE34D60078BD7A /* Trah Trahich - Cross The Road.app */,
-				C17000000000000000000001 /* TrahTrahichTests.xctest */,
+                C17000000000000000000001,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -73,27 +62,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		C17000000000000000000008 /* TrahTrahichTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = C17000000000000000000009 /* Build configuration list for PBXNativeTarget "TrahTrahichTests" */;
-			buildPhases = (
-				C17000000000000000000003 /* Sources */,
-				C17000000000000000000004 /* Frameworks */,
-				C17000000000000000000005 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				C17000000000000000000007 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				C17000000000000000000002 /* TrahTrahichTests */,
-			);
-			name = TrahTrahichTests;
-			productName = TrahTrahichTests;
-			productReference = C17000000000000000000001 /* TrahTrahichTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 		FACBFC282CFE34D60078BD7A /* Trah Trahich - Cross The Road */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = FACBFC372CFE34D80078BD7A /* Build configuration list for PBXNativeTarget "Trah Trahich - Cross The Road" */;
@@ -147,19 +115,12 @@
 			projectRoot = "";
 			targets = (
 				FACBFC282CFE34D60078BD7A /* Trah Trahich - Cross The Road */,
-				C17000000000000000000008 /* TrahTrahichTests */,
+                C17000000000000000000008,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		C17000000000000000000005 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		FACBFC272CFE34D60078BD7A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -170,13 +131,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		C17000000000000000000003 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		FACBFC252CFE34D60078BD7A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -186,47 +140,7 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin PBXTargetDependency section */
-		C17000000000000000000007 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = FACBFC282CFE34D60078BD7A /* Trah Trahich - Cross The Road */;
-			targetProxy = C17000000000000000000006 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin XCBuildConfiguration section */
-		C1700000000000000000000A /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
-				PRODUCT_BUNDLE_IDENTIFIER = com.trahtrahich.game.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Trah Trahich - Cross The Road.app/Trah Trahich - Cross The Road";
-			};
-			name = Debug;
-		};
-		C1700000000000000000000B /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
-				PRODUCT_BUNDLE_IDENTIFIER = com.trahtrahich.game.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Trah Trahich - Cross The Road.app/Trah Trahich - Cross The Road";
-			};
-			name = Release;
-		};
 		FACBFC352CFE34D80078BD7A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -352,7 +266,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = TTRAppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = TTRAccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "\"TrahTrahich/Preview Content\"";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
@@ -364,7 +278,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.trahtrahich.game;
 				PRODUCT_NAME = "Trah Trahich - Cross The Road";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -383,7 +297,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = TTRAppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = TTRAccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "\"TrahTrahich/Preview Content\"";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
@@ -395,7 +309,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.trahtrahich.game;
 				PRODUCT_NAME = "Trah Trahich - Cross The Road";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -411,15 +325,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		C17000000000000000000009 /* Build configuration list for PBXNativeTarget "TrahTrahichTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				C1700000000000000000000A /* Debug */,
-				C1700000000000000000000B /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		FACBFC242CFE34D60078BD7A /* Build configuration list for PBXProject "Trah Trahich - Cross The Road" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
